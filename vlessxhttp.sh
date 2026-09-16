@@ -4,7 +4,7 @@ set -euo pipefail
 
 # ============================================================
 # OPENRESTY + VLESS-XHTTP — STABLE | DILI MO-TIMEOUT
-# Everyday Streaming & Download Optimized
+# Qwiklabs-Safe Pattern | Same UUID
 # ============================================================
 
 UUID_KEY="a1b2c3d4-5678-40ef-98ab-cdef01234567"
@@ -19,7 +19,7 @@ MAX_INST=2
 TIMEOUT="3600"
 
 # ============================================================
-mkdir -p ~/openresty-xhttp && cd ~/openresty-xhttp
+rm -rf ~/openresty-xhttp && mkdir -p ~/openresty-xhttp && cd ~/openresty-xhttp
 
 cat > config.json <<JSONEND
 {
@@ -65,13 +65,11 @@ worker_rlimit_nofile 8192;
 events {
     worker_connections 4096;
     use epoll;
-    multi_accept on;
 }
 
 http {
     sendfile on;
     tcp_nodelay on;
-    tcp_nopush on;
     keepalive_timeout 3600s;
     keepalive_requests 100000;
 
@@ -110,45 +108,27 @@ http {
 }
 CONFEND
 
-cat > supervisord.conf <<'SUPEND'
-[supervisord]
-nodaemon=true
-logfile=/dev/null
-user=root
-
-[program:xray]
-command=/usr/local/bin/xray run -c /etc/xray/config.json
-autorestart=true
-startsecs=3
-startretries=20
-stdout_logfile=/dev/stdout
-stderr_logfile=/dev/stderr
-
-[program:openresty]
-command=/usr/local/openresty/bin/openresty -g 'daemon off;'
-autorestart=true
-startsecs=3
-startretries=20
-stdout_logfile=/dev/stdout
-stderr_logfile=/dev/stderr
-SUPEND
-
 cat > Dockerfile <<'DOCKEND'
-FROM ghcr.io/xtls/xray-core:26.7.28 AS xray-bin
+FROM alpine:3.20 AS builder
+RUN apk add --no-cache curl unzip ca-certificates
+RUN curl -L https://github.com/XTLS/Xray-core/releases/latest/download/Xray-linux-64.zip -o xray.zip && \
+    unzip -q xray.zip xray && \
+    chmod +x xray
+
 FROM openresty/openresty:1.21.4.1-0-alpine
-
-RUN apk add --no-cache supervisor tzdata
-
-COPY --from=xray-bin /usr/local/bin/xray /usr/local/bin/xray
+RUN mkdir -p /usr/local/bin
+COPY --from=builder /xray /usr/local/bin/xray
 COPY config.json /etc/xray/config.json
 COPY nginx.conf /etc/nginx/nginx.conf
-COPY supervisord.conf /etc/supervisord.conf
 
-RUN /usr/local/bin/xray run -test -c /etc/xray/config.json
 EXPOSE 8080
 
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisord.conf"]
+CMD ["/bin/sh", "-c", \
+    "xray run -c /etc/xray/config.json & \
+    exec /usr/local/openresty/bin/openresty -g 'daemon off;'"]
 DOCKEND
+
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com --quiet >/dev/null 2>&1
 
 echo "🚀 Deploying $SERVICE_NAME..."
 
@@ -156,6 +136,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$REGION" \
   --platform managed \
+  --allow-unauthenticated \
   --port 8080 \
   --cpu "$CPU" \
   --memory "$MEMORY" \
@@ -164,10 +145,9 @@ gcloud run deploy "$SERVICE_NAME" \
   --max-instances "$MAX_INST" \
   --timeout "${TIMEOUT}s" \
   --execution-environment=gen2 \
+  --no-cpu-throttling \
   --cpu-boost \
   --session-affinity \
-  --allow-unauthenticated \
-  --startup-probe=tcpSocket.port=8080,initialDelaySeconds=15,periodSeconds=8,failureThreshold=15,timeoutSeconds=5 \
   --quiet
 
 DOMAIN=$(gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(status.url)')
