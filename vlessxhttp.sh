@@ -1,11 +1,5 @@
-cat <<'EOF' > deploy.sh && chmod +x deploy.sh && ./deploy.sh
 #!/bin/bash
 set -euo pipefail
-
-# ============================================================
-# OPENRESTY + VLESS-XHTTP — STABLE | DILI MO-TIMEOUT
-# Qwiklabs-Safe Pattern | Same UUID
-# ============================================================
 
 UUID_KEY="a1b2c3d4-5678-40ef-98ab-cdef01234567"
 SERVICE_NAME="openresty-xhttp"
@@ -18,7 +12,6 @@ MIN_INST=1
 MAX_INST=2
 TIMEOUT="3600"
 
-# ============================================================
 rm -rf ~/openresty-xhttp && mkdir -p ~/openresty-xhttp && cd ~/openresty-xhttp
 
 cat > config.json <<JSONEND
@@ -102,7 +95,7 @@ http {
         }
 
         location / {
-            return 200 '<html><body style="font-family:system-ui;text-align:center;padding:3em;"><h1>✅ Service Active</h1><p>OpenResty + VLESS-XHTTP</p></body></html>';
+            return 200 '<html><body style="font-family:system-ui;text-align:center;padding:3em;"><h1>✅ Service Active</h1></body></html>';
         }
     }
 }
@@ -128,10 +121,9 @@ CMD ["/bin/sh", "-c", \
     exec /usr/local/openresty/bin/openresty -g 'daemon off;'"]
 DOCKEND
 
-gcloud services enable run.googleapis.com cloudbuild.googleapis.com --quiet >/dev/null 2>&1
+gcloud services enable run.googleapis.com cloudbuild.googleapis.com --quiet 2>/dev/null || true
 
-echo "🚀 Deploying $SERVICE_NAME..."
-
+echo "🚀 Building & Deploying..."
 gcloud run deploy "$SERVICE_NAME" \
   --source . \
   --region "$REGION" \
@@ -147,32 +139,18 @@ gcloud run deploy "$SERVICE_NAME" \
   --execution-environment=gen2 \
   --no-cpu-throttling \
   --cpu-boost \
-  --session-affinity \
-  --quiet
+  --session-affinity
 
+echo
 DOMAIN=$(gcloud run services describe "$SERVICE_NAME" --region "$REGION" --format='value(status.url)')
-DOMAIN_CLEAN=${DOMAIN#https://}
-
+echo "✅ DEPLOYED SUCCESSFULLY!"
+echo "🔗 URL: $DOMAIN"
 echo
-echo "============================================================"
-echo "✅ DEPLOYMENT SUCCESS ✅"
-echo "============================================================"
-echo "Service:   $SERVICE_NAME"
-echo "Domain:    $DOMAIN_CLEAN"
-echo "Region:    $REGION"
-echo "CPU:       $CPU"
-echo "Memory:    $MEMORY"
-echo "Min/Max:   $MIN_INST / $MAX_INST"
-echo
-echo "=== NETMOD SETTINGS ==="
-echo "Host:      $DOMAIN_CLEAN"
-echo "Port:      443"
-echo "Network:   XHTTP"
-echo "Path:      /xhttp"
-echo "Mode:      stream"
-echo "UUID:      $UUID_KEY"
-echo "Security:  TLS"
-echo "SNI:       $DOMAIN_CLEAN"
-echo "Keep-Alive: ON"
-echo "============================================================"
-EOF
+echo "NETMOD SETTINGS:"
+echo "Host: ${DOMAIN#https://}"
+echo "Port: 443"
+echo "Network: XHTTP"
+echo "Path: /xhttp"
+echo "Mode: stream"
+echo "UUID: $UUID_KEY"
+echo "TLS/SNI: ON"
